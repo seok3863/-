@@ -1,134 +1,96 @@
+import streamlit as st
+import streamlit.components.v1 as components
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  ball.position.y+=ballV.y*dt;
-
-  if(ball.position.y<0.48){
-    ball.position.y=0.48;
-    if(ballV.y<0)ballV.y*=-0.34;
-    ballV.x*=0.985;
-    ballV.z*=0.985;
-  }
-  ball.rotation.x+=ballV.z*dt*0.6;
-  ball.rotation.z-=ballV.x*dt*0.6;
-
-  // 측면 아웃
-  if(Math.abs(ball.position.x)>W/2-0.5){
-    ball.position.x=Math.sign(ball.position.x)*(W/2-0.5);
-    ballV.x*=-0.72;
-  }
-
-  // 골라인 및 골 판정
-  if(ball.position.z < -L/2 || ball.position.z > L/2){
-    const inGoal=Math.abs(ball.position.x)<5.0 && ball.position.y<3.5;
-    if(inGoal){
-      scoreGoal(ball.position.z<0?"blue":"red");
-    }else{
-      ball.position.z=Math.sign(ball.position.z)*(L/2-0.6);
-      ballV.z*=-0.7;
-    }
-  }
-
-  // 공이 지나치게 빨라지지 않도록 제한
-  const horizontalSpeed=Math.hypot(ballV.x,ballV.z);
-  if(horizontalSpeed>23){
-    ballV.x*=23/horizontalSpeed;
-    ballV.z*=23/horizontalSpeed;
-  }
-}
-
-// 카메라: 선수 뒤쪽에서 공과 선수를 함께 보여줌
-function updateCamera(dt){
-  const p=player.group.position;
-  const desired=new THREE.Vector3(p.x,11,p.z+15);
-  camera.position.lerp(desired,1-Math.exp(-3.3*dt));
-  const look=new THREE.Vector3(
-    ball.position.x*0.35+p.x*0.65,
-    0.6,
-    ball.position.z*0.35+p.z*0.65-5
-  );
-  camera.lookAt(look);
-}
-
-function resize(){
-  const w=root.clientWidth,h=root.clientHeight;
-  if(!w||!h)return;
-  renderer.setSize(w,h,false);
-  camera.aspect=w/h;
-  camera.updateProjectionMatrix();
-}
-window.addEventListener('resize',resize);
-resize();
-
-window.addEventListener('keydown',e=>{
-  if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)){
-    e.preventDefault();
-  }
-  keys[e.code]=true;
-  if(e.code==="Space"&&!e.repeat){
-    shoot(player,-1,keys.ShiftLeft||keys.ShiftRight?17:13.5,false);
-  }
-  if(e.code==="KeyR"&&!e.repeat){
-    resetGame();
-    statusEl.textContent="WASD 이동 · SPACE 슛 · SHIFT 달리기";
-  }
-});
-window.addEventListener('keyup',e=>{keys[e.code]=false;});
-window.addEventListener('blur',()=>{Object.keys(keys).forEach(k=>keys[k]=false);});
-document.getElementById('restart').addEventListener('click',()=>{
-  resetGame();
-  statusEl.textContent="WASD 이동 · SPACE 슛 · SHIFT 달리기";
-  root.focus();
-});
-root.addEventListener('pointerdown',()=>root.focus());
-
-resetGame();
-function animate(now){
-  requestAnimationFrame(animate);
-  const dt=Math.min((now-lastTime)/1000,0.04);
-  lastTime=now;
-  update(dt);
-  updateCamera(dt);
-  renderer.render(scene,camera);
-}
-requestAnimationFrame(animate);
-})();
-</script>
-</body>
-</html>
-"""
-
-components.html(game_html, height=700, scrolling=False)
-
-st.info(
-    "팁: 게임 화면을 클릭한 뒤 이동하세요. "
-    "공 가까이에서 스페이스바를 누르면 슛을 쏠 수 있습니다. "
-    "경기 종료 후 R 키 또는 다시 시작 버튼을 누르세요."
+st.set_page_config(
+    page_title="3D 축구 챌린지",
+    page_icon="⚽",
+    layout="wide",
 )
 
+st.title("⚽ 3D 축구 챌린지")
+st.caption("메시 vs 호날두 · 보통 난이도 · 3인칭 축구")
 
-⋮⋮⋮⋮⋮⋮⋮⋮
+st.markdown(
+    """
+    **조작법**
+    - `W A S D` 또는 방향키: 이동
+    - `Space`: 슛
+    - `Shift`: 달리기
+    - `R`: 경기 재시작
+    - 게임 화면을 한 번 클릭한 다음 조작하세요.
+    """
+)
+
+game_html = r"""
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  overflow: hidden;
+  font-family: Arial, sans-serif;
+  background: #172b20;
+  color: white;
+}
+#game { width: 100%; height: 680px; position: relative; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; outline: none; }
+#hud {
+  position: absolute; top: 12px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 15px;
+  background: rgba(8,20,15,.88);
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 14px; padding: 10px 20px;
+  white-space: nowrap; z-index: 2;
+}
+.team { font-size: 13px; font-weight: bold; }
+#score { font-size: 27px; font-weight: 900; letter-spacing: 4px; }
+#clock {
+  position: absolute; top: 78px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,.65); border-radius: 8px;
+  padding: 6px 14px; font-weight: bold; z-index: 2;
+}
+#help {
+  position: absolute; left: 12px; bottom: 12px;
+  background: rgba(0,0,0,.65); border-radius: 10px;
+  padding: 10px 12px; font-size: 12px; line-height: 1.7;
+  z-index: 2;
+}
+#message {
+  position: absolute; top: 38%; left: 50%;
+  transform: translate(-50%,-50%);
+  font-size: clamp(26px,5vw,48px); font-weight: 900;
+  color: #ffe66d; text-shadow: 0 3px 10px #000;
+  text-align: center; pointer-events: none; z-index: 3;
+}
+#restart {
+  position: absolute; bottom: 12px; right: 12px; z-index: 3;
+  border: none; border-radius: 10px; padding: 10px 15px;
+  background: #f7d44a; color: #18261c; font-weight: bold;
+  cursor: pointer;
+}
+#status {
+  position: absolute; top: 112px; left: 50%;
+  transform: translateX(-50%); font-size: 12px;
+  background: rgba(0,0,0,.45); padding: 5px 9px;
+  border-radius: 6px; z-index: 2; white-space: nowrap;
+}
+</style>
+</head>
+<body>
+<div id="game" tabindex="0">
+  <div id="hud">
+    <span class="team" style="color:#65c9ff">MESSI · YOU</span>
+    <span id="score">0 - 0</span>
+    <span class="team" style="color:#ff8585">RONALDO · AI</span>
+  </div>
+  <div id="clock">90</div>
+  <div id="status">WASD 이동 · SPACE 슛 · SHIFT 달리기</div>
+  <div id="message">경기 시작!</div>
+  <div id="help">
+    <b>조작법</b><br>t
